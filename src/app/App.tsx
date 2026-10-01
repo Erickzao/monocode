@@ -527,6 +527,7 @@ import {
   type AutomationRun,
 } from "../features/automations/model/automations";
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
+import { useFigmaLaunches } from "../features/figma/hooks/useFigmaLaunches";
 import type { QuickLaunch } from "../features/quick-composer/model/quickComposer";
 import { claimInboxAutomationRuns } from "../features/automations/model/automationEvents";
 import {
@@ -7273,6 +7274,21 @@ function Workspace({
     [appendTab, submitSession, onSaveDraft],
   );
   useQuickComposerLaunches(launchQuickSession);
+  useFigmaLaunches(
+    {
+      launch: launchQuickSession,
+      submit: (sessionId, text, attachments) =>
+        submitSession(sessionId, text, attachments, {
+          followUpBehavior: "queue",
+        }),
+      changeModel: onModelChange,
+      changeModelSettings: onModelSettingsChange,
+      currentProject: () => projectCwdRef.current,
+      session: (id) =>
+        sessionsRef.current.find((session) => session.id === id) ?? null,
+    },
+    inboxViewOpen ? null : (active ?? null),
+  );
   const launchQuickSessionRef = useRef(launchQuickSession);
   launchQuickSessionRef.current = launchQuickSession;
   const submitSessionRef = useRef(submitSession);
