@@ -51,6 +51,17 @@ const MAX_DIMENSION: f64 = 100_000.0;
 const GENERATIONS_KEPT: usize = 20;
 const PREVIEW_ROOT: &str = ".monocode";
 const PREVIEW_IGNORE: &str = "*\n";
+const PREVIEW_FOLDER_IGNORE: &str = "figma/";
+const PREVIEW_IGNORE_RULES: [&str; 8] = [
+    "*",
+    "**",
+    "figma",
+    "figma/",
+    "/figma",
+    "/figma/",
+    "figma/**",
+    "/figma/**",
+];
 const PREVIEW_COPY_DEPTH: usize = 4;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -1503,7 +1514,7 @@ fn prepare_preview(
     }
     let root = project.join(PREVIEW_ROOT);
     ensure_real_dir(&root)?;
-    write_new_file(&root.join(".gitignore"), PREVIEW_IGNORE)?;
+    ensure_previews_ignored(&root.join(".gitignore"))?;
     let figma = root.join("figma");
     ensure_real_dir(&figma)?;
     let directory = figma.join(id);
@@ -1519,16 +1530,40 @@ fn prepare_preview(
     })
 }
 
-fn write_new_file(path: &Path, contents: &str) -> Result<(), String> {
-    match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-    {
-        Ok(mut file) => file
-            .write_all(contents.as_bytes())
+fn ensure_previews_ignored(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == ErrorKind::NotFound => fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .and_then(|mut file| file.write_all(PREVIEW_IGNORE.as_bytes()))
             .map_err(|error| error.to_string()),
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(()),
+        Ok(meta) if meta.file_type().is_symlink() => Err(format!(
+            "{} is a link, so MonoCode will not write the Figma preview through it",
+            crate::fs::path_to_js(path)
+        )),
+        Ok(meta) if meta.is_file() => {
+            let existing = fs::read_to_string(path).map_err(|error| error.to_string())?;
+            if existing
+                .lines()
+                .any(|line| PREVIEW_IGNORE_RULES.contains(&line.trim()))
+            {
+                return Ok(());
+            }
+            let separator = if existing.is_empty() || existing.ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
+            fs::OpenOptions::new()
+                .append(true)
+                .open(path)
+                .and_then(|mut file| {
+                    file.write_all(format!("{separator}{PREVIEW_FOLDER_IGNORE}\n").as_bytes())
+                })
+                .map_err(|error| error.to_string())
+        }
+        Ok(_) => Err(format!("{} is not a file", crate::fs::path_to_js(path))),
         Err(error) => Err(error.to_string()),
     }
 }
@@ -1894,18 +1929,25 @@ mod tests {
     }
 
     #[test]
-    fn keeps_an_existing_preview_ignore_file() {
+    fn adds_the_preview_rule_to_an_existing_ignore_file() {
         let root = temp_root("preview-ignore");
         let generations = root.join("generations");
         let project = root.join("project");
+        let ignore = project.join(".monocode").join(".gitignore");
         fs::create_dir_all(project.join(".monocode")).unwrap();
-        fs::write(project.join(".monocode").join(".gitignore"), "custom\n").unwrap();
         let generation = stage_generation(&generations, &bundle()).unwrap();
-        prepare_preview(&generations, &generation.id, &project).unwrap();
-        assert_eq!(
-            fs::read_to_string(project.join(".monocode").join(".gitignore")).unwrap(),
-            "custom\n"
-        );
+        for (before, after) in [
+            ("custom\n", "custom\nfigma/\n"),
+            ("custom", "custom\nfigma/\n"),
+            ("", "figma/\n"),
+            ("custom\nfigma/\n", "custom\nfigma/\n"),
+            ("*\n", "*\n"),
+        ] {
+            fs::write(&ignore, before).unwrap();
+            prepare_preview(&generations, &generation.id, &project).unwrap();
+            prepare_preview(&generations, &generation.id, &project).unwrap();
+            assert_eq!(fs::read_to_string(&ignore).unwrap(), after);
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1919,6 +1961,9 @@ mod tests {
         assert!(prepare_preview(&generations, "../escape", &project).is_err());
         assert!(prepare_preview(&generations, "0000000000000-deadbeef", &project).is_err());
         assert!(prepare_preview(&generations, &generation.id, &root.join("missing")).is_err());
+        let odd = root.join("odd");
+        fs::create_dir_all(odd.join(".monocode").join(".gitignore")).unwrap();
+        assert!(prepare_preview(&generations, &generation.id, &odd).is_err());
         fs::write(project.join(".monocode"), "not a folder").unwrap();
         assert!(prepare_preview(&generations, &generation.id, &project).is_err());
         fs::remove_dir_all(root).unwrap();
@@ -1955,7 +2000,7 @@ mod tests {
         )
         .unwrap();
         let generation = stage_generation(&generations, &bundle()).unwrap();
-        prepare_preview(&generations, &generation.id, &project).unwrap();
+        assert!(prepare_preview(&generations, &generation.id, &project).is_err());
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
         fs::remove_dir_all(root).unwrap();
     }

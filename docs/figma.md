@@ -55,8 +55,9 @@ shows each one as a compact file row with its preview, and answers in a few
 lines that reference the files instead of pasting their code. Nothing else in
 the project changes until you review the preview and ask the agent to implement
 it. `.monocode/` carries its own `.gitignore`, so git ignores the previews
-without touching the project's `.gitignore`; the 20 most recent previews are
-kept.
+without touching the project's `.gitignore`. When `.monocode/.gitignore` already
+exists and doesn't ignore the previews, MonoCode adds a `figma/` line to it. The
+20 most recent previews are kept.
 
 A busy session queues the component for after its current turn. When the
 project has no selected session, a new one is started for it. The same happens
@@ -114,9 +115,9 @@ fields.
 - After the key check, each connection completes a second handshake with a
   per-connection session token before it can exchange messages.
 - Previews are written only inside the session's working folder, under
-  `.monocode/figma/`. MonoCode refuses to write through a linked `.monocode` or
-  `figma` folder, and never overwrites or writes through an existing
-  `.monocode/.gitignore`.
+  `.monocode/figma/`. MonoCode refuses a linked `.monocode` folder, `figma`
+  folder, or `.monocode/.gitignore`, and never overwrites an existing
+  `.monocode/.gitignore`; it only adds the `figma/` line described above.
 - MonoCode only asks the plugin for the selection, a preview, or a capture. The
   plugin has no commands that change the Figma file.
 - Captured images must match their declared PNG, JPEG, GIF, or WebP signatures and
