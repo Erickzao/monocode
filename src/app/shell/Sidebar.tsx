@@ -11,6 +11,7 @@ import {
   CircleDashed,
   CircleDot,
   Clock,
+  Figma,
   FileScript,
   Folder,
   GitBranch,
@@ -34,6 +35,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -45,6 +47,11 @@ import {
   saveSidebarTabOrder,
   type SidebarTabId,
 } from "../../features/settings/model/appearance";
+import {
+  loadFigmaPanelEnabled,
+  subscribeFigmaPanelEnabled,
+} from "../../features/settings/model/settings";
+import { FigmaPanel } from "../../features/figma/ui/FigmaPanel";
 import { formatInteger } from "../../shared/lib/numbers";
 import {
   type GitFileDiffKind,
@@ -191,6 +198,7 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   inbox: "Inbox",
   files: "Explorer",
   changes: "Changes",
+  figma: "Figma",
 };
 
 const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
@@ -198,6 +206,7 @@ const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
   inbox: Inbox,
   files: FileScript,
   changes: GitBranch,
+  figma: Figma,
 };
 
 function projectPathBusy(
@@ -698,11 +707,18 @@ function SidebarComponent({
   const sessionListKey = `${cwd}\0${sessionFilters.showArchived}\0${sessionFilters.time}\0${sessionFilters.hiddenHarnesses.join(",")}\0${sessionFilters.status.working}\0${sessionFilters.status.needsApproval}\0${sessionFilters.status.done}\0${searchQuery}`;
   const sessionHarnesses = harnessesInSessions(projectSessions);
   const narrowedByUser = searchNarrowed || filtersActive;
-  const visibleTabs = tabOrder.filter((itemId) => itemId !== "inbox");
+  const figmaPanelEnabled = useSyncExternalStore(
+    subscribeFigmaPanelEnabled,
+    loadFigmaPanelEnabled,
+    loadFigmaPanelEnabled,
+  );
+  const hiddenTab = (itemId: SidebarTab) =>
+    itemId === "inbox" || (itemId === "figma" && !figmaPanelEnabled);
+  const visibleTabs = tabOrder.filter((itemId) => !hiddenTab(itemId));
   const sortable = useAnimatedReorder(visibleTabs, (ids) => {
     let index = 0;
     const next = tabOrder.map((itemId) =>
-      itemId === "inbox" ? itemId : ids[index++],
+      hiddenTab(itemId) ? itemId : ids[index++],
     );
     setTabOrder(next);
     saveSidebarTabOrder(next);
@@ -1565,7 +1581,7 @@ function SidebarComponent({
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
+          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-1 text-[12px] leading-none ${
             active ? "bg-selection text-content" : "text-content/50"
           }`}
         >
@@ -1996,6 +2012,11 @@ function SidebarComponent({
             </div>
           )}
         </div>
+        {tab === "figma" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <FigmaPanel cwd={cwd} />
+          </div>
+        ) : null}
         {tab === "changes" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <SourceControl

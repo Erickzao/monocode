@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Figma Desktop pairs with MonoCode through a local plugin, without a Figma token or OAuth app. Settings → Connections → Figma turns on a loopback bridge, installs the plugin, and lists connected files; the pairing key can be reset at any time. See [Figma Desktop](docs/figma.md).
+- The Figma sidebar tab follows the live selection of each connected file with a rendered preview. **Generate component** sends the layer's tree, image fills, and preview to the selected session of the current project. The agent writes the pixel-perfect component into a git-ignored `.monocode/figma` preview folder, so the chat shows compact file rows instead of pasted code, and leaves the rest of the project untouched until you ask for the implementation. The plugin can start the same generation from Figma.
+- A model picker above **Generate component** shows the selected session's agent, model, and options, and changes them the same way the composer does. Without a selected session, a new session starts with the Figma default from Settings → Connections → Figma → Generation model, or with the project's default from Providers.
+- Agents in a thread with `/operator` can read the live Figma selection with `figma.selection` and export a layer with `figma.capture`, by selection, layer ID, or a link's `node-id`. The export is read-only and lands in the session's git-ignored `.monocode/figma` folder, so an agent can check a component against the design without generating one.
+
 ## [0.6.0] - 2026-09-30
 
 ### Added
