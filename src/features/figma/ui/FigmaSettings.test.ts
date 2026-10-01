@@ -4,7 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { loadFigmaPanelEnabled } from "../../settings/model/settings";
 import type { FigmaBridgeStatus } from "../model/figma";
-import { loadFigmaDefaultModel, saveFigmaDefaultModel } from "../model/figmaModels";
+import {
+  loadFigmaDefaultModel,
+  saveFigmaDefaultModel,
+} from "../model/figmaModels";
 import { FigmaSettings } from "./FigmaSettings";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -16,7 +19,10 @@ vi.mock("@tauri-apps/api/core", async (original) => ({
   invoke,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: async (_event: string, handler: (event: { payload: unknown }) => void) => {
+  listen: async (
+    _event: string,
+    handler: (event: { payload: unknown }) => void,
+  ) => {
     bridgeListeners.push(handler);
     return () => {};
   },
@@ -76,11 +82,9 @@ beforeEach(() => {
       }
       if (command === "figma_plugin_install") {
         status = { ...status, pluginInstalled: true };
-        return {
-          directory: status.pluginDirectory,
-          manifestPath: `${status.pluginDirectory}/manifest.json`,
-        };
+        return { ...status };
       }
+      if (command === "reveal_path") return undefined;
       throw new Error(`Unexpected command ${command}`);
     },
   );
@@ -116,6 +120,40 @@ it("installs the plugin and explains how to import it", async () => {
   expect(container.textContent).toContain("Import plugin from manifest");
   expect(container.textContent).toContain("/data/figma-plugin/manifest.json");
   expect(button("Reinstall plugin")).toBeTruthy();
+  expect(
+    invoke.mock.calls.filter(([command]) => command === "figma_bridge_status"),
+  ).toHaveLength(1);
+});
+
+it("reveals the manifest to import and reports a failed copy", async () => {
+  status = {
+    ...baseStatus(),
+    enabled: true,
+    listening: true,
+    pluginInstalled: true,
+  };
+  vi.stubGlobal("navigator", {
+    clipboard: {
+      writeText: async () => {
+        throw new Error("Clipboard access was denied");
+      },
+    },
+  });
+  Object.defineProperty(document, "execCommand", {
+    configurable: true,
+    value: () => false,
+  });
+  await render();
+  await act(async () => button("Reveal folder").click());
+  expect(invoke).toHaveBeenCalledWith("reveal_path", {
+    path: "/data/figma-plugin/manifest.json",
+  });
+  await act(async () => button("Copy path").click());
+  Reflect.deleteProperty(document, "execCommand");
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "copy failed",
+  );
+  expect(button("Copy path")).toBeTruthy();
 });
 
 it("follows live bridge updates and lists connected files", async () => {

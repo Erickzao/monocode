@@ -29,7 +29,8 @@ Select **Generate component** in the Figma tab, or **Generate in MonoCode** in t
 plugin window. The plugin captures the layer as Figma's REST JSON (layout, fills,
 strokes, effects, typography, component properties, inline SVG for vector layers),
 every image fill, and a PNG preview. Image fills over 8 MB in total are re-encoded
-in the plugin before they are sent.
+in the plugin before they are sent. Layers nested more than 48 levels deep can't
+be captured; select a layer inside them instead.
 
 MonoCode validates the capture and stages it under its local data directory in
 `figma/generations/<id>/`:
@@ -53,7 +54,9 @@ without touching the project's `.gitignore`; the 20 most recent previews are
 kept.
 
 A busy session queues the component for after its current turn. When the
-project has no selected session, a new one is started for it. Remote projects
+project has no selected session, a new one is started for it. The same happens
+when the selected session has not created its worktree yet, since that worktree
+only exists after its first message. Remote projects
 are not supported yet, because the captures stay on this computer. The 20 most
 recent captures are kept in MonoCode's data directory as well.
 
@@ -88,14 +91,17 @@ instead of an attached image.
   per-connection session token before it can exchange messages.
 - Previews are written only inside the session's working folder, under
   `.monocode/figma/`. MonoCode refuses to write through a linked `.monocode` or
-  `figma` folder, and never overwrites an existing `.monocode/.gitignore`.
+  `figma` folder, and never overwrites or writes through an existing
+  `.monocode/.gitignore`.
 - MonoCode only asks the plugin for the selection, a preview, or a capture. The
   plugin has no commands that change the Figma file.
 - Captured images must match their declared PNG, JPEG, GIF, or WebP signatures and
   size limits before they are written, and asset file names are derived from
   their validated hashes.
-- Layer names and text from Figma reach the agent as design content; the prompt
-  tells the agent not to follow instructions found inside the design.
+- Layer, file, and page names reach the agent quoted and escaped, as design
+  content, and the prompt starts by telling the agent not to follow
+  instructions found inside the design. Layer types must be Figma's own
+  uppercase names.
 - **Reset pairing** disconnects every plugin, issues a new key, and rewrites the
   installed plugin. Run the plugin again in Figma to reconnect. The key and the
   plugin files live in the app's local data directory; on Unix they are created

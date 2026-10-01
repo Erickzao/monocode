@@ -3,6 +3,7 @@ import {
   sameProjectPath,
 } from "../../projects/model/recents";
 import {
+  sessionDisplayTitle,
   sessionWorkCwd,
   type HarnessId,
   type Session,
@@ -29,6 +30,8 @@ export function figmaSessionTargetFrom(
     !session ||
     session.inboxAsk ||
     session.worktreeRemoved ||
+    session.worktreePreparing ||
+    (session.workspaceMode === "worktree" && !session.worktreeCwd) ||
     session.orchestrationLeadId ||
     isRemoteProjectPath(session.cwd)
   )
@@ -37,16 +40,12 @@ export function figmaSessionTargetFrom(
     sessionId: session.id,
     cwd: session.cwd,
     workCwd: sessionWorkCwd(session),
-    title: session.title,
+    title: sessionDisplayTitle(session.title, session.harness),
     harness: session.harness,
     model: session.model,
     modelSettings: session.modelSettings,
     busy: !!session.busy,
   };
-}
-
-export function figmaSessionTarget(): FigmaSessionTarget | null {
-  return target;
 }
 
 export function figmaSessionTargetFor(

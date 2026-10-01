@@ -1581,7 +1581,7 @@ function SidebarComponent({
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
+          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-1 text-[12px] leading-none ${
             active ? "bg-selection text-content" : "text-content/50"
           }`}
         >

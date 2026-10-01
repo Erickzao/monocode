@@ -6,6 +6,7 @@ const ASSET_CAPTURE_LIMIT_BYTES = 64 * 1024 * 1024;
 const ASSET_RELAY_BUDGET_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_REFS = 50;
 const MAX_NODES = 5000;
+const MAX_DEPTH = 48;
 const SUPPORTED_ROOT_TYPES = ["FRAME", "GROUP", "COMPONENT", "COMPONENT_SET", "INSTANCE", "SECTION"];
 const GEOMETRY_TYPES = ["VECTOR", "REGULAR_POLYGON", "POLYGON", "STAR", "LINE", "BOOLEAN_OPERATION", "ELLIPSE"];
 
@@ -13,14 +14,6 @@ figma.showUI(__html__, { width: 320, height: 360, themeColors: true });
 
 figma.ui.onmessage = async (message) => {
   if (!message || typeof message !== "object") return;
-  if (message.type === "notify" && typeof message.message === "string") {
-    figma.notify(message.message);
-    return;
-  }
-  if (message.type === "close") {
-    figma.closePlugin();
-    return;
-  }
   if (message.type !== "execute-command") return;
   try {
     const result = await handleCommand(message.command, message.params);
@@ -138,7 +131,7 @@ async function codegenBundle() {
       width: rootBox.width,
       height: rootBox.height,
     },
-    root: codegenNode(document, null, ""),
+    root: codegenNode(document, null, "", 0),
     preview: { mimeType: "image/png", bytes: previewBytes.byteLength, imageData: figma.base64Encode(previewBytes) },
     assets,
     properties: document.componentPropertyDefinitions || {},
@@ -193,21 +186,23 @@ function collectDiagnostics(document, rootType) {
     diagnostics.push(`component properties could not be read: ${document.componentPropertyDefinitionError}`);
   }
   let count = 0;
-  const walk = (node, depth) => {
+  const walk = (node) => {
     count += 1;
-    if (depth > 100) diagnostics.push(`layer nesting deeper than 100: ${node.id}`);
     if (node.isMask) diagnostics.push(`mask: ${node.id}`);
     if (typeof node.rotation === "number" && Math.abs(node.rotation) > 0.001) diagnostics.push(`rotation: ${node.id}`);
     if (node.effects && node.effects.some((effect) => effect && effect.visible !== false)) diagnostics.push(`effects: ${node.id}`);
     if (node.svgError && !node.svg && GEOMETRY_TYPES.includes(node.type)) diagnostics.push(`SVG export failed for ${node.id}: ${node.svgError}`);
-    for (const child of node.children || []) walk(child, depth + 1);
+    for (const child of node.children || []) walk(child);
   };
-  walk(document, 0);
+  walk(document);
   if (count > MAX_NODES) diagnostics.push(`${count} layers exceed the ${MAX_NODES} layer budget`);
   return [...new Set(diagnostics)];
 }
 
-function codegenNode(node, parentBox, parentPath) {
+function codegenNode(node, parentBox, parentPath, depth) {
+  if (depth > MAX_DEPTH) {
+    throw new Error(`The selection nests layers more than ${MAX_DEPTH} levels deep. Select a layer inside it instead.`);
+  }
   const box = node.absoluteBoundingBox;
   if (!box || typeof box.x !== "number" || typeof box.y !== "number" || typeof box.width !== "number" || typeof box.height !== "number") {
     throw new Error(`Layer has invalid bounds: ${String(node.id)}`);
@@ -261,7 +256,7 @@ function codegenNode(node, parentBox, parentPath) {
     svg: node.svg,
     svgError: node.svgError,
     imageRefs,
-    children: (node.children || []).map((child) => codegenNode(child, box, nodePath)),
+    children: (node.children || []).map((child) => codegenNode(child, box, nodePath, depth + 1)),
   };
 }
 

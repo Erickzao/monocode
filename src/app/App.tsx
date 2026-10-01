@@ -597,6 +597,7 @@ import {
   loadAutosave,
   loadCollapsedProjectRailMode,
   loadFileTabMode,
+  loadFigmaPanelEnabled,
   loadLiveAgentsEnabled,
   loadNotesEnabled,
   loadDiffViewer,
@@ -607,6 +608,7 @@ import {
   matchCustomKeybinding,
   saveSettingsSection,
   saveAutosave,
+  subscribeFigmaPanelEnabled,
   subscribeLiveAgentsEnabled,
   subscribeNotesEnabled,
   type CollapsedProjectRailMode,
@@ -1034,6 +1036,11 @@ function Workspace({
     subscribeLiveAgentsEnabled,
     loadLiveAgentsEnabled,
     () => true,
+  );
+  const figmaPanelEnabled = useSyncExternalStore(
+    subscribeFigmaPanelEnabled,
+    loadFigmaPanelEnabled,
+    loadFigmaPanelEnabled,
   );
   const [collapsedProjectRailMode, setCollapsedProjectRailMode] =
     useState<CollapsedProjectRailMode>(loadCollapsedProjectRailMode);
@@ -9949,8 +9956,12 @@ function Workspace({
   }, [onVisitForward]);
 
   useEffect(() => {
-    if (sidebarTab === "inbox") setSidebarTab("sessions");
-  }, [sidebarTab]);
+    if (
+      sidebarTab === "inbox" ||
+      (sidebarTab === "figma" && !figmaPanelEnabled)
+    )
+      setSidebarTab("sessions");
+  }, [sidebarTab, figmaPanelEnabled]);
 
   useEffect(() => {
     if (!dockVisible) setProjectTerminalFocused(false);

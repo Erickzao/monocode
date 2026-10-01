@@ -8,14 +8,13 @@ import {
   type Session,
 } from "../../sessions/model/session";
 import {
-  FIGMA_ACTIVITY_EVENT,
   FIGMA_SESSION_MODEL_EVENT,
   requestFigmaSessionModel,
-  type FigmaActivity,
   type FigmaGeneration,
   type FigmaPreviewWorkspace,
   type FigmaSessionModelRequest,
 } from "../model/figma";
+import { figmaActivityFor, reportFigmaActivity } from "../model/figmaActivity";
 import type { FigmaModelChoice } from "../model/figmaModels";
 import {
   applyFigmaSessionModel,
@@ -25,14 +24,7 @@ import {
 
 const generation: FigmaGeneration = {
   id: "1727790000000-abcdef12",
-  directory: "/data/figma/generations/1727790000000-abcdef12",
-  previewPath: "/data/figma/generations/1727790000000-abcdef12/preview.png",
   previewBytes: 2048,
-  bundlePath:
-    "/data/figma/generations/1727790000000-abcdef12/source-bundle.json",
-  assetsManifestPath:
-    "/data/figma/generations/1727790000000-abcdef12/assets/manifest.json",
-  assetCount: 0,
   source: {
     nodeId: "12:34",
     name: "Card",
@@ -48,7 +40,6 @@ const generation: FigmaGeneration = {
     pageName: "Screens",
   },
   diagnostics: [],
-  requestedByPlugin: true,
 };
 
 const choice: FigmaModelChoice = {
@@ -57,12 +48,12 @@ const choice: FigmaModelChoice = {
   modelSettings: { effort: "high" },
 };
 
-let activity: FigmaActivity[];
-const record = (event: Event) =>
-  activity.push((event as CustomEvent<FigmaActivity>).detail);
-
 function session(cwd: string, changes: Partial<Session> = {}): Session {
-  return { ...newSession("claude", cwd, "opus"), title: "Checkout", ...changes };
+  return {
+    ...newSession("claude", cwd, "opus"),
+    title: "Checkout",
+    ...changes,
+  };
 }
 
 function previewIn(cwd: string): FigmaPreviewWorkspace {
@@ -89,18 +80,16 @@ function workspace(selected: Session | null, accepted = true) {
 }
 
 beforeEach(() => {
-  activity = [];
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
     removeItem: (key: string) => storage.delete(key),
   });
-  window.addEventListener(FIGMA_ACTIVITY_EVENT, record);
 });
 
 afterEach(() => {
-  window.removeEventListener(FIGMA_ACTIVITY_EVENT, record);
+  reportFigmaActivity(null);
   vi.unstubAllGlobals();
 });
 
@@ -121,19 +110,17 @@ it("generates in the selected session of the project", async () => {
   expect(attachments.map((attachment) => attachment.path)).toEqual([
     previewIn("/work/app").previewPath,
   ]);
-  expect(activity).toEqual([
-    {
-      status: "started",
-      generation,
-      cwd: "/work/app",
-      choice: {
-        harness: "claude",
-        model: selected.model,
-        modelSettings: selected.modelSettings,
-      },
-      target: { kind: "session", sessionId: selected.id, title: "Checkout" },
+  expect(figmaActivityFor("/work/app")).toEqual({
+    status: "started",
+    cwd: "/work/app",
+    generation,
+    choice: {
+      harness: "claude",
+      model: selected.model,
+      modelSettings: selected.modelSettings,
     },
-  ]);
+    target: { kind: "session", sessionId: selected.id, title: "Checkout" },
+  });
 });
 
 it("prepares the preview in the selected session's worktree", async () => {
@@ -157,12 +144,11 @@ it("reports a preview folder it could not prepare", async () => {
   );
   await deliverFigmaGeneration(generation, "/work/app", choice, target);
   expect(target.submit).not.toHaveBeenCalled();
-  expect(activity).toEqual([
-    {
-      status: "failed",
-      message: "Open a project folder to generate the component in",
-    },
-  ]);
+  expect(figmaActivityFor("/work/app")).toEqual({
+    status: "failed",
+    cwd: "/work/app",
+    message: "Open a project folder to generate the component in",
+  });
 });
 
 it("hands a busy selected session the component to queue", async () => {
@@ -187,15 +173,13 @@ it("starts a new session when the project has no selected session", async () => 
     modelSettings: { effort: "high" },
     reveal: true,
   });
-  expect(activity).toEqual([
-    {
-      status: "started",
-      generation,
-      cwd: "/work/app",
-      choice,
-      target: { kind: "new" },
-    },
-  ]);
+  expect(figmaActivityFor("/work/app")).toEqual({
+    status: "started",
+    cwd: "/work/app",
+    generation,
+    choice,
+    target: { kind: "new" },
+  });
 });
 
 it("ignores a selected session from another project or one it cannot use", async () => {
@@ -203,6 +187,7 @@ it("ignores a selected session from another project or one it cannot use", async
     session("/work/site"),
     session("/work/app", { orchestrationLeadId: "lead" }),
     session("/work/app", { worktreeRemoved: true }),
+    session("/work/app", { workspaceMode: "worktree" }),
   ]) {
     const target = workspace(selected);
     await deliverFigmaGeneration(generation, "/work/app", choice, target);
@@ -214,23 +199,24 @@ it("ignores a selected session from another project or one it cannot use", async
 it("reports a selected session that refuses the component", async () => {
   const target = workspace(session("/work/app"), false);
   await deliverFigmaGeneration(generation, "/work/app", choice, target);
-  expect(activity).toEqual([
-    {
-      status: "failed",
-      message:
-        "Checkout cannot take the component right now. Wait for its turn to finish or select another session.",
-    },
-  ]);
+  expect(figmaActivityFor("/work/app")).toEqual({
+    status: "failed",
+    cwd: "/work/app",
+    message:
+      "Checkout cannot take the component right now. Wait for its turn to finish or select another session.",
+  });
 });
 
 it("refuses to generate outside a local project", async () => {
   const target = workspace(session("/work/app"));
   await deliverFigmaGeneration(generation, "remote://host/app", choice, target);
+  expect(figmaActivityFor("remote://host/app")?.status).toBe("failed");
   await deliverFigmaGeneration(generation, "~", choice, target);
+  expect(figmaActivityFor("~")?.status).toBe("failed");
+  expect(figmaActivityFor("/work/app")).toBeNull();
   expect(target.prepare).not.toHaveBeenCalled();
   expect(target.submit).not.toHaveBeenCalled();
   expect(target.launch).not.toHaveBeenCalled();
-  expect(activity.map((entry) => entry.status)).toEqual(["failed", "failed"]);
 });
 
 it("sends the panel's model change to the workspace", () => {

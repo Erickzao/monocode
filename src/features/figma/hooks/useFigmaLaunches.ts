@@ -16,12 +16,12 @@ import {
   figmaGenerationMessage,
   figmaProjectError,
   prepareFigmaPreview,
-  reportFigmaActivity,
   type FigmaGeneration,
   type FigmaLaunchRequest,
   type FigmaPreviewWorkspace,
   type FigmaSessionModelRequest,
 } from "../model/figma";
+import { reportFigmaActivity } from "../model/figmaActivity";
 import { resolveFigmaModel, type FigmaModelChoice } from "../model/figmaModels";
 import {
   figmaSessionTargetFrom,
@@ -62,7 +62,7 @@ export async function deliverFigmaGeneration(
 ): Promise<void> {
   const error = figmaProjectError(cwd);
   if (error) {
-    reportFigmaActivity({ status: "failed", message: error });
+    reportFigmaActivity({ status: "failed", cwd, message: error });
     return;
   }
   const target = figmaSessionTargetFrom(workspace.selected);
@@ -85,8 +85,8 @@ export async function deliverFigmaGeneration(
         );
       reportFigmaActivity({
         status: "started",
-        generation,
         cwd,
+        generation,
         choice: {
           harness: target.harness,
           model: target.model,
@@ -107,14 +107,15 @@ export async function deliverFigmaGeneration(
     );
     reportFigmaActivity({
       status: "started",
-      generation,
       cwd,
+      generation,
       choice,
       target: { kind: "new" },
     });
   } catch (reason) {
     reportFigmaActivity({
       status: "failed",
+      cwd,
       message: String(reason instanceof Error ? reason.message : reason),
     });
   }
@@ -174,10 +175,20 @@ export function useFigmaLaunches(
     void listen<FigmaGeneration>(FIGMA_GENERATION_EVENT, (event) => {
       const cwd = workspaceRef.current.currentProject();
       deliver(event.payload, cwd, resolveFigmaModel(cwd).choice);
-    }).then((unlisten) => {
-      if (disposed) unlisten();
-      else stop = unlisten;
-    });
+    }).then(
+      (unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
+      },
+      (reason: unknown) => {
+        if (disposed) return;
+        reportFigmaActivity({
+          status: "failed",
+          cwd: workspaceRef.current.currentProject(),
+          message: `Components sent from the Figma plugin cannot reach MonoCode: ${String(reason instanceof Error ? reason.message : reason)}`,
+        });
+      },
+    );
     return () => {
       disposed = true;
       stop?.();

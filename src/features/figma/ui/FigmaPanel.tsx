@@ -3,7 +3,8 @@ import { OPEN_CONNECTIONS_EVENT } from "../../connections/model/connections";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { ModelPicker } from "../../sessions/ui/ModelPicker";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
-import { useFigmaActivity, useFigmaBridge } from "../hooks/useFigmaBridge";
+import { useFigmaActivity } from "../hooks/useFigmaActivity";
+import { useFigmaBridge } from "../hooks/useFigmaBridge";
 import { useFigmaModel } from "../hooks/useFigmaModel";
 import { useFigmaSessionTarget } from "../hooks/useFigmaSessionTarget";
 import {
@@ -12,13 +13,13 @@ import {
   figmaProjectError,
   figmaSourceLabel,
   loadFigmaSelectionPreview,
-  reportFigmaActivity,
   requestFigmaLaunch,
   requestFigmaSessionModel,
   type FigmaActivity,
   type FigmaConnection,
   type FigmaSource,
 } from "../model/figma";
+import { reportFigmaActivity } from "../model/figmaActivity";
 import {
   clearFigmaModelPick,
   pickFigmaModel,
@@ -131,7 +132,7 @@ function ConnectionView({
   connection: FigmaConnection;
   cwd: string;
 }) {
-  const activity = useFigmaActivity();
+  const activity = useFigmaActivity(cwd);
   const model = useFigmaModel(cwd);
   const target = useFigmaSessionTarget(cwd);
   const [generating, setGenerating] = useState(false);
@@ -142,7 +143,7 @@ function ConnectionView({
   const generate = async () => {
     if (!source || generating || projectError) return;
     setGenerating(true);
-    reportFigmaActivity({ status: "capturing", source });
+    reportFigmaActivity({ status: "capturing", cwd, source });
     try {
       const generation = await captureFigmaGeneration(connection.id);
       requestFigmaLaunch({
@@ -153,6 +154,7 @@ function ConnectionView({
     } catch (reason) {
       reportFigmaActivity({
         status: "failed",
+        cwd,
         message: String(reason instanceof Error ? reason.message : reason),
       });
     } finally {

@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { sameProjectPath } from "../../projects/model/recents";
 import {
-  figmaSessionTarget,
+  figmaSessionTargetFor,
   subscribeFigmaSessionTarget,
   type FigmaSessionTarget,
 } from "../model/figmaTarget";
@@ -9,10 +8,6 @@ import {
 export function useFigmaSessionTarget(
   project: string,
 ): FigmaSessionTarget | null {
-  const target = useSyncExternalStore(
-    subscribeFigmaSessionTarget,
-    figmaSessionTarget,
-    figmaSessionTarget,
-  );
-  return target && sameProjectPath(target.cwd, project) ? target : null;
+  const current = () => figmaSessionTargetFor(project);
+  return useSyncExternalStore(subscribeFigmaSessionTarget, current, current);
 }

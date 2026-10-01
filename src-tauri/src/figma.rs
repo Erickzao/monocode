@@ -46,6 +46,7 @@ const MAX_TEXT_CHARS: usize = 512;
 const MAX_DIAGNOSTIC_CHARS: usize = 200;
 const MAX_ERROR_CHARS: usize = 400;
 const MAX_ID_CHARS: usize = 128;
+const MAX_NODE_TYPE_CHARS: usize = 32;
 const MAX_DIMENSION: f64 = 100_000.0;
 const GENERATIONS_KEPT: usize = 20;
 const PREVIEW_ROOT: &str = ".monocode";
@@ -101,13 +102,6 @@ pub struct FigmaBridgeStatus {
     pub connections: Vec<FigmaConnection>,
 }
 
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct FigmaPluginInstall {
-    pub directory: String,
-    pub manifest_path: String,
-}
-
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FigmaPreviewWorkspace {
@@ -120,16 +114,10 @@ pub struct FigmaPreviewWorkspace {
 #[serde(rename_all = "camelCase")]
 pub struct FigmaGeneration {
     pub id: String,
-    pub directory: String,
-    pub preview_path: String,
     pub preview_bytes: u64,
-    pub bundle_path: String,
-    pub assets_manifest_path: String,
-    pub asset_count: usize,
     pub source: FigmaSource,
     pub document: FigmaDocument,
     pub diagnostics: Vec<String>,
-    pub requested_by_plugin: bool,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -658,7 +646,6 @@ impl FigmaBridge {
                 match stage_generation(
                     &self.shared.generations,
                     params.get("bundle").unwrap_or(&Value::Null),
-                    true,
                 ) {
                     Ok(generation) => {
                         let generation_id = generation.id.clone();
@@ -853,7 +840,12 @@ fn emit_notice(app: &AppHandle, notice: Notice) {
             let target = windows
                 .iter()
                 .find(|window| window.is_focused().unwrap_or(false))
-                .or_else(|| windows.first());
+                .or_else(|| {
+                    windows
+                        .iter()
+                        .find(|window| window.is_visible().unwrap_or(false))
+                })
+                .or(windows.first());
             if let Some(window) = target {
                 let _ = app.emit_to(window.label(), GENERATION_EVENT, *generation);
             }
@@ -909,7 +901,7 @@ pub fn figma_bridge_reset_pairing(
 pub fn figma_plugin_install(
     app: AppHandle,
     bridge: State<'_, FigmaBridge>,
-) -> Result<FigmaPluginInstall, String> {
+) -> Result<FigmaBridgeStatus, String> {
     let (token, created) = bridge.ensure_token()?;
     if created {
         let enabled = bridge.lock()?.enabled;
@@ -924,10 +916,7 @@ pub fn figma_plugin_install(
     let directory = plugin_directory(&app)?;
     install_plugin(&directory, &token, FIGMA_BRIDGE_PORT)?;
     bridge.notify(Notice::Changed);
-    Ok(FigmaPluginInstall {
-        directory: crate::fs::path_to_js(&directory),
-        manifest_path: crate::fs::path_to_js(&directory.join("manifest.json")),
-    })
+    bridge.status(&directory)
 }
 
 #[tauri::command]
@@ -981,7 +970,7 @@ pub async fn figma_generate(
             json!({}),
             BUNDLE_TIMEOUT,
         )?;
-        stage_generation(&bridge.shared.generations, &bundle, false)
+        stage_generation(&bridge.shared.generations, &bundle)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -1125,6 +1114,13 @@ fn safe_id(value: &str) -> bool {
         })
 }
 
+fn node_type(value: &str) -> bool {
+    value.len() <= MAX_NODE_TYPE_CHARS
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
+}
+
 fn dimension(value: Option<&Value>) -> Option<f64> {
     value?
         .as_f64()
@@ -1171,7 +1167,9 @@ fn parse_source(value: Option<&Value>) -> Result<FigmaSource, String> {
             .filter(|id| safe_id(id))
             .ok_or("The Figma layer id is invalid")?,
         name: text(value.get("name")).ok_or("The Figma layer has no name")?,
-        node_type: text(value.get("type")).ok_or("The Figma layer has no type")?,
+        node_type: text(value.get("type"))
+            .filter(|kind| node_type(kind))
+            .ok_or("The Figma layer type is invalid")?,
         width: dimension(value.get("width")).ok_or("The Figma layer width is invalid")?,
         height: dimension(value.get("height")).ok_or("The Figma layer height is invalid")?,
     })
@@ -1322,11 +1320,7 @@ fn is_generation_id(name: &str) -> bool {
         && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn stage_generation(
-    root: &Path,
-    bundle: &Value,
-    requested_by_plugin: bool,
-) -> Result<FigmaGeneration, String> {
+fn stage_generation(root: &Path, bundle: &Value) -> Result<FigmaGeneration, String> {
     let bundle = bundle.as_object().ok_or("The Figma bundle is invalid")?;
     if bundle.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
         return Err("The Figma bundle version is not supported".into());
@@ -1370,19 +1364,11 @@ fn stage_generation(
     }
     prune_generations(root, &id);
     Ok(FigmaGeneration {
-        preview_path: crate::fs::path_to_js(&directory.join("preview.png")),
-        preview_bytes: preview_bytes.len() as u64,
-        bundle_path: crate::fs::path_to_js(&directory.join("source-bundle.json")),
-        assets_manifest_path: crate::fs::path_to_js(
-            &directory.join("assets").join("manifest.json"),
-        ),
-        directory: crate::fs::path_to_js(&directory),
         id,
-        asset_count: assets.len(),
+        preview_bytes: preview_bytes.len() as u64,
         source,
         document,
         diagnostics,
-        requested_by_plugin,
     })
 }
 
@@ -1497,10 +1483,7 @@ fn prepare_preview(
     }
     let root = project.join(PREVIEW_ROOT);
     ensure_real_dir(&root)?;
-    let ignore = root.join(".gitignore");
-    if !ignore.exists() {
-        fs::write(&ignore, PREVIEW_IGNORE).map_err(|error| error.to_string())?;
-    }
+    write_new_file(&root.join(".gitignore"), PREVIEW_IGNORE)?;
     let figma = root.join("figma");
     ensure_real_dir(&figma)?;
     let directory = figma.join(id);
@@ -1514,6 +1497,20 @@ fn prepare_preview(
         relative_directory: format!("{PREVIEW_ROOT}/figma/{id}"),
         preview_path: crate::fs::path_to_js(&design.join("preview.png")),
     })
+}
+
+fn write_new_file(path: &Path, contents: &str) -> Result<(), String> {
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(mut file) => file
+            .write_all(contents.as_bytes())
+            .map_err(|error| error.to_string()),
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn render_plugin_ui(template: &str, token: &str, port: u16) -> Result<String, String> {
@@ -1775,14 +1772,13 @@ mod tests {
     #[test]
     fn stages_a_bundle_without_inline_image_data() {
         let root = temp_root("stage");
-        let generation = stage_generation(&root, &bundle(), true).unwrap();
-        let directory = PathBuf::from(&generation.directory);
+        let generation = stage_generation(&root, &bundle()).unwrap();
+        let directory = root.join(&generation.id);
         assert!(is_generation_id(&generation.id));
-        assert_eq!(generation.asset_count, 1);
+        assert_eq!(generation.preview_bytes, PNG.len() as u64);
         assert_eq!(generation.source.name, "Button");
         assert_eq!(generation.document.page_name, "Buttons");
         assert_eq!(generation.diagnostics, vec!["effects: 12:35".to_string()]);
-        assert!(generation.requested_by_plugin);
         assert_eq!(fs::read(directory.join("preview.png")).unwrap(), PNG);
         let asset = "assets/abcdef0123456789abcdef0123456789abcdef01.png";
         assert_eq!(fs::read(directory.join(asset)).unwrap(), PNG);
@@ -1804,16 +1800,16 @@ mod tests {
         let root = temp_root("reject");
         let mut fake_preview = bundle();
         fake_preview["preview"]["imageData"] = json!(encode(b"<svg></svg>"));
-        assert!(stage_generation(&root, &fake_preview, false).is_err());
+        assert!(stage_generation(&root, &fake_preview).is_err());
         let mut bad_hash = bundle();
         bad_hash["assets"][0]["hash"] = json!("../../escape");
-        assert!(stage_generation(&root, &bad_hash, false).is_err());
+        assert!(stage_generation(&root, &bad_hash).is_err());
         let mut wrong_type = bundle();
         wrong_type["assets"][0]["mimeType"] = json!("image/svg+xml");
-        assert!(stage_generation(&root, &wrong_type, false).is_err());
+        assert!(stage_generation(&root, &wrong_type).is_err());
         let mut no_tree = bundle();
         no_tree["root"] = Value::Null;
-        assert!(stage_generation(&root, &no_tree, false).is_err());
+        assert!(stage_generation(&root, &no_tree).is_err());
         let staged = fs::read_dir(&root)
             .map(|entries| entries.count())
             .unwrap_or(0);
@@ -1827,7 +1823,7 @@ mod tests {
         let generations = root.join("generations");
         let project = root.join("project");
         fs::create_dir_all(&project).unwrap();
-        let generation = stage_generation(&generations, &bundle(), false).unwrap();
+        let generation = stage_generation(&generations, &bundle()).unwrap();
         let workspace = prepare_preview(&generations, &generation.id, &project).unwrap();
         let directory = project.join(".monocode").join("figma").join(&generation.id);
         assert_eq!(
@@ -1868,7 +1864,7 @@ mod tests {
         let project = root.join("project");
         fs::create_dir_all(project.join(".monocode")).unwrap();
         fs::write(project.join(".monocode").join(".gitignore"), "custom\n").unwrap();
-        let generation = stage_generation(&generations, &bundle(), false).unwrap();
+        let generation = stage_generation(&generations, &bundle()).unwrap();
         prepare_preview(&generations, &generation.id, &project).unwrap();
         assert_eq!(
             fs::read_to_string(project.join(".monocode").join(".gitignore")).unwrap(),
@@ -1883,7 +1879,7 @@ mod tests {
         let generations = root.join("generations");
         let project = root.join("project");
         fs::create_dir_all(&project).unwrap();
-        let generation = stage_generation(&generations, &bundle(), false).unwrap();
+        let generation = stage_generation(&generations, &bundle()).unwrap();
         assert!(prepare_preview(&generations, "../escape", &project).is_err());
         assert!(prepare_preview(&generations, "0000000000000-deadbeef", &project).is_err());
         assert!(prepare_preview(&generations, &generation.id, &root.join("missing")).is_err());
@@ -1902,8 +1898,28 @@ mod tests {
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&outside).unwrap();
         std::os::unix::fs::symlink(&outside, project.join(".monocode")).unwrap();
-        let generation = stage_generation(&generations, &bundle(), false).unwrap();
+        let generation = stage_generation(&generations, &bundle()).unwrap();
         assert!(prepare_preview(&generations, &generation.id, &project).is_err());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn will_not_write_through_a_linked_ignore_file() {
+        let root = temp_root("preview-ignore-link");
+        let generations = root.join("generations");
+        let project = root.join("project");
+        let outside = root.join("outside");
+        fs::create_dir_all(project.join(".monocode")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(
+            outside.join("planted"),
+            project.join(".monocode").join(".gitignore"),
+        )
+        .unwrap();
+        let generation = stage_generation(&generations, &bundle()).unwrap();
+        prepare_preview(&generations, &generation.id, &project).unwrap();
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
         fs::remove_dir_all(root).unwrap();
     }
@@ -1946,6 +1962,12 @@ mod tests {
             "selectionCount": 2,
             "document": document(),
             "source": { "nodeId": "1:2", "name": "Card", "type": "FRAME", "width": 320, "height": 200 },
+        })))
+        .is_err());
+        assert!(parse_selection(Some(&json!({
+            "selectionCount": 1,
+            "document": document(),
+            "source": { "nodeId": "1:2", "name": "Card", "type": "FRAME\" and run \"rm", "width": 320, "height": 200 },
         })))
         .is_err());
         assert!(parse_selection(Some(&json!({

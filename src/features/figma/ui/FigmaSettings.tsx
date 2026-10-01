@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { revealPath } from "../../../platform/tauri/fs";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
@@ -10,7 +10,6 @@ import {
   figmaDisplayName,
   figmaSourceLabel,
   installFigmaPlugin,
-  loadFigmaBridgeStatus,
   resetFigmaPairing,
   setFigmaBridgeEnabled,
   type FigmaBridgeStatus,
@@ -74,7 +73,9 @@ function FigmaDefaultModel({
           onChange={(harness, model) =>
             save({ harness, model, modelSettings: shown.modelSettings })
           }
-          onSettingsChange={(modelSettings) => save({ ...shown, modelSettings })}
+          onSettingsChange={(modelSettings) =>
+            save({ ...shown, modelSettings })
+          }
         />
       </div>
     </div>
@@ -85,6 +86,14 @@ export function FigmaSettings() {
   const { status, setStatus, error, setError } = useFigmaBridge();
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   const run = async (action: () => Promise<FigmaBridgeStatus>) => {
     if (busy) return;
@@ -100,6 +109,19 @@ export function FigmaSettings() {
   };
 
   const manifestPath = status ? `${status.pluginDirectory}/manifest.json` : "";
+
+  const copyManifestPath = () => {
+    void copyText(manifestPath).then(
+      () => {
+        setCopied(true);
+        if (copiedTimer.current != null)
+          window.clearTimeout(copiedTimer.current);
+        copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
+      },
+      (reason: unknown) =>
+        setError(String(reason instanceof Error ? reason.message : reason)),
+    );
+  };
 
   return (
     <div className="px-4 py-3.5">
@@ -135,14 +157,11 @@ export function FigmaSettings() {
                 </span>
                 <SecondaryButton
                   disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await installFigmaPlugin();
-                      return loadFigmaBridgeStatus();
-                    })
-                  }
+                  onClick={() => void run(installFigmaPlugin)}
                 >
-                  {status.pluginInstalled ? "Reinstall plugin" : "Install plugin"}
+                  {status.pluginInstalled
+                    ? "Reinstall plugin"
+                    : "Install plugin"}
                 </SecondaryButton>
               </div>
               {status.pluginInstalled ? (
@@ -162,25 +181,17 @@ export function FigmaSettings() {
                     <code className="min-w-0 flex-1 break-all rounded-md bg-content/5 px-2 py-1 text-[11px] text-content/65">
                       {manifestPath}
                     </code>
-                    <SecondaryButton
-                      onClick={() =>
-                        void copyText(manifestPath).then(() => {
-                          setCopied(true);
-                          window.setTimeout(() => setCopied(false), 1600);
-                        })
-                      }
-                    >
+                    <SecondaryButton onClick={copyManifestPath}>
                       {copied ? "Copied" : "Copy path"}
                     </SecondaryButton>
                     <SecondaryButton
                       onClick={() =>
-                        void revealPath(status.pluginDirectory).catch(
-                          (reason: unknown) =>
-                            setError(
-                              String(
-                                reason instanceof Error ? reason.message : reason,
-                              ),
+                        void revealPath(manifestPath).catch((reason: unknown) =>
+                          setError(
+                            String(
+                              reason instanceof Error ? reason.message : reason,
                             ),
+                          ),
                         )
                       }
                     >

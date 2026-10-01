@@ -5,11 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { OPEN_CONNECTIONS_EVENT } from "../../connections/model/connections";
 import {
   FIGMA_LAUNCH_EVENT,
-  reportFigmaActivity,
   type FigmaBridgeStatus,
   type FigmaGeneration,
   type FigmaLaunchRequest,
 } from "../model/figma";
+import { reportFigmaActivity } from "../model/figmaActivity";
 import {
   clearFigmaModelPick,
   pickFigmaModel,
@@ -36,14 +36,7 @@ let status: FigmaBridgeStatus;
 
 const generation: FigmaGeneration = {
   id: "1727790000000-abcdef12",
-  directory: "/data/figma/generations/1727790000000-abcdef12",
-  previewPath: "/data/figma/generations/1727790000000-abcdef12/preview.png",
   previewBytes: 2048,
-  bundlePath:
-    "/data/figma/generations/1727790000000-abcdef12/source-bundle.json",
-  assetsManifestPath:
-    "/data/figma/generations/1727790000000-abcdef12/assets/manifest.json",
-  assetCount: 0,
   source: {
     nodeId: "1:2",
     name: "Primary",
@@ -59,7 +52,6 @@ const generation: FigmaGeneration = {
     pageName: "Buttons",
   },
   diagnostics: [],
-  requestedByPlugin: false,
 };
 
 function connectedStatus(
@@ -131,6 +123,7 @@ afterEach(() => {
   act(() => root.unmount());
   clearFigmaModelPick("/work/app");
   setFigmaSessionTarget(null);
+  reportFigmaActivity(null);
   container.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -268,10 +261,14 @@ it("tells where the generation went", async () => {
   await act(async () => {
     reportFigmaActivity({
       status: "started",
-      generation,
       cwd: "/work/app",
+      generation,
       choice: { harness: "codex", model: "gpt-5", modelSettings: {} },
-      target: { kind: "session", sessionId: "session-1", title: "Checkout page" },
+      target: {
+        kind: "session",
+        sessionId: "session-1",
+        title: "Checkout page",
+      },
     });
   });
   expect(container.textContent).toContain(
@@ -280,13 +277,33 @@ it("tells where the generation went", async () => {
   await act(async () => {
     reportFigmaActivity({
       status: "started",
-      generation,
       cwd: "/work/app",
+      generation,
       choice: { harness: "codex", model: "gpt-5", modelSettings: {} },
       target: { kind: "new" },
     });
   });
   expect(container.textContent).toContain("Started Codex for Primary.");
+});
+
+it("keeps another project's generation out of this project's panel", async () => {
+  await render();
+  await act(async () => {
+    reportFigmaActivity({
+      status: "failed",
+      cwd: "/work/site",
+      message: "The Figma plugin disconnected",
+    });
+  });
+  expect(container.textContent).not.toContain("The Figma plugin disconnected");
+  await act(async () => {
+    reportFigmaActivity({
+      status: "failed",
+      cwd: "/work/app",
+      message: "The Figma plugin disconnected",
+    });
+  });
+  expect(container.textContent).toContain("The Figma plugin disconnected");
 });
 
 it("does not generate without exactly one selected layer", async () => {

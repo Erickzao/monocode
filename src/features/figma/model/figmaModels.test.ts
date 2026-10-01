@@ -34,7 +34,11 @@ describe("figma generation model", () => {
   it("starts with the project's new-session agent and model", () => {
     const project = defaultSessionChoice(APP);
     expect(resolveFigmaModel(APP)).toEqual({
-      choice: { harness: project.harness, model: project.model, modelSettings: {} },
+      choice: {
+        harness: project.harness,
+        model: project.model,
+        modelSettings: {},
+      },
       source: "project",
     });
   });
@@ -56,8 +60,16 @@ describe("figma generation model", () => {
   });
 
   it("keeps a panel pick for its own project only", () => {
-    saveFigmaDefaultModel({ harness: "codex", model: "gpt-5", modelSettings: {} });
-    pickFigmaModel(APP, { harness: "claude", model: "opus", modelSettings: {} });
+    saveFigmaDefaultModel({
+      harness: "codex",
+      model: "gpt-5",
+      modelSettings: {},
+    });
+    pickFigmaModel(APP, {
+      harness: "claude",
+      model: "opus",
+      modelSettings: {},
+    });
     expect(resolveFigmaModel(APP)).toMatchObject({
       choice: { harness: "claude", model: "opus" },
       source: "picked",
@@ -76,7 +88,9 @@ describe("figma generation model", () => {
       model: "gpt-5",
       modelSettings: { effort: "high" },
     });
-    expect(JSON.parse(storage.get("monocode.figmaGenerationModel.v1") ?? "")).toEqual({
+    expect(
+      JSON.parse(storage.get("monocode.figmaGenerationModel.v1") ?? ""),
+    ).toEqual({
       harness: "codex",
       model: "gpt-5",
       modelSettings: { effort: "high" },
@@ -114,7 +128,11 @@ describe("figma generation model", () => {
     const listener = vi.fn();
     window.addEventListener(FIGMA_MODELS_CHANGE_EVENT, listener);
     const before = figmaModelsRevision();
-    pickFigmaModel(APP, { harness: "claude", model: "opus", modelSettings: {} });
+    pickFigmaModel(APP, {
+      harness: "claude",
+      model: "opus",
+      modelSettings: {},
+    });
     saveFigmaDefaultModel(null);
     clearFigmaModelPick(APP);
     clearFigmaModelPick(APP);

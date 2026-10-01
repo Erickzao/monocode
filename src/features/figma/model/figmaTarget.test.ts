@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../sessions/model/session";
 import {
-  figmaSessionTarget,
   figmaSessionTargetFor,
   figmaSessionTargetFrom,
   setFigmaSessionTarget,
@@ -9,7 +8,11 @@ import {
 } from "./figmaTarget";
 
 function session(cwd: string, changes: Partial<Session> = {}): Session {
-  return { ...newSession("codex", cwd, "gpt-5"), title: "Checkout", ...changes };
+  return {
+    ...newSession("codex", cwd, "gpt-5"),
+    title: "Checkout",
+    ...changes,
+  };
 }
 
 afterEach(() => setFigmaSessionTarget(null));
@@ -29,10 +32,24 @@ describe("figma session target", () => {
     });
   });
 
+  it("names the session the way its tab does", () => {
+    expect(
+      figmaSessionTargetFrom(newSession("claude", "/work/app", "opus"))?.title,
+    ).toBe("New session");
+    expect(
+      figmaSessionTargetFrom(
+        session("/work/app", { title: "codex · Checkout" }),
+      )?.title,
+    ).toBe("Checkout");
+  });
+
   it("works in the session's worktree when it has one", () => {
     expect(
       figmaSessionTargetFrom(
-        session("/work/app", { worktreeCwd: "/work/app-worktrees/figma" }),
+        session("/work/app", {
+          workspaceMode: "worktree",
+          worktreeCwd: "/work/app-worktrees/figma",
+        }),
       )?.workCwd,
     ).toBe("/work/app-worktrees/figma");
   });
@@ -40,12 +57,30 @@ describe("figma session target", () => {
   it("skips sessions a design generation must not land in", () => {
     expect(figmaSessionTargetFrom(null)).toBeNull();
     expect(
-      figmaSessionTargetFrom(session("/work/app", { orchestrationLeadId: "lead" })),
+      figmaSessionTargetFrom(
+        session("/work/app", { orchestrationLeadId: "lead" }),
+      ),
     ).toBeNull();
     expect(
       figmaSessionTargetFrom(session("/work/app", { worktreeRemoved: true })),
     ).toBeNull();
-    expect(figmaSessionTargetFrom(session("remote://host/home/me/app"))).toBeNull();
+    expect(
+      figmaSessionTargetFrom(
+        session("/work/app", { workspaceMode: "worktree" }),
+      ),
+    ).toBeNull();
+    expect(
+      figmaSessionTargetFrom(
+        session("/work/app", {
+          workspaceMode: "worktree",
+          worktreeCwd: "/work/app-worktrees/figma",
+          worktreePreparing: true,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      figmaSessionTargetFrom(session("remote://host/home/me/app")),
+    ).toBeNull();
   });
 
   it("only offers the target to its own project", () => {
@@ -60,12 +95,10 @@ describe("figma session target", () => {
     const selected = session("/work/app");
     setFigmaSessionTarget(figmaSessionTargetFrom(selected));
     setFigmaSessionTarget(figmaSessionTargetFrom({ ...selected }));
-    setFigmaSessionTarget(
-      figmaSessionTargetFrom({ ...selected, busy: true }),
-    );
+    setFigmaSessionTarget(figmaSessionTargetFrom({ ...selected, busy: true }));
     setFigmaSessionTarget(null);
     stop();
     expect(listener).toHaveBeenCalledTimes(3);
-    expect(figmaSessionTarget()).toBeNull();
+    expect(figmaSessionTargetFor("/work/app")).toBeNull();
   });
 });
