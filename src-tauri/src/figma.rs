@@ -132,7 +132,7 @@ enum Notice {
     Generation(Box<FigmaGeneration>),
 }
 
-type Notify = Arc<dyn Fn(Notice) + Send + Sync>;
+type Notify = Arc<dyn Fn(Notice) -> bool + Send + Sync>;
 
 enum ClientEvent {
     Bytes(Vec<u8>),
@@ -261,8 +261,8 @@ impl FigmaBridge {
             .map_err(|_| "The Figma bridge is unavailable".to_string())
     }
 
-    fn notify(&self, notice: Notice) {
-        (self.shared.notify)(notice);
+    fn notify(&self, notice: Notice) -> bool {
+        (self.shared.notify)(notice)
     }
 
     fn start(&self, port: u16) -> Result<u16, String> {
@@ -649,7 +649,15 @@ impl FigmaBridge {
                 ) {
                     Ok(generation) => {
                         let generation_id = generation.id.clone();
-                        self.notify(Notice::Generation(Box::new(generation)));
+                        if !self.notify(Notice::Generation(Box::new(generation))) {
+                            let _ =
+                                fs::remove_dir_all(self.shared.generations.join(&generation_id));
+                            return vec![command_error_frame(
+                                &channel,
+                                &id,
+                                "Open a MonoCode window, then generate the component again.",
+                            )];
+                        }
                         vec![result_frame(
                             &channel,
                             &id,
@@ -822,18 +830,18 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn emit_notice(app: &AppHandle, notice: Notice) {
+fn emit_notice(app: &AppHandle, notice: Notice) -> bool {
     match notice {
         Notice::Changed => {
             let Some(bridge) = app.try_state::<FigmaBridge>() else {
-                return;
+                return false;
             };
             let Ok(directory) = plugin_directory(app) else {
-                return;
+                return false;
             };
-            if let Ok(status) = bridge.status(&directory) {
-                let _ = app.emit(BRIDGE_EVENT, status);
-            }
+            bridge
+                .status(&directory)
+                .is_ok_and(|status| app.emit(BRIDGE_EVENT, status).is_ok())
         }
         Notice::Generation(generation) => {
             let windows = crate::window::workspace_windows(app);
@@ -846,9 +854,10 @@ fn emit_notice(app: &AppHandle, notice: Notice) {
                         .find(|window| window.is_visible().unwrap_or(false))
                 })
                 .or(windows.first());
-            if let Some(window) = target {
-                let _ = app.emit_to(window.label(), GENERATION_EVENT, *generation);
-            }
+            target.is_some_and(|window| {
+                app.emit_to(window.label(), GENERATION_EVENT, *generation)
+                    .is_ok()
+            })
         }
     }
 }
@@ -1661,7 +1670,23 @@ mod tests {
     }
 
     fn quiet_bridge(root: &Path) -> FigmaBridge {
-        FigmaBridge::new(root.to_path_buf(), true, TOKEN.into(), Arc::new(|_| {}))
+        FigmaBridge::new(root.to_path_buf(), true, TOKEN.into(), Arc::new(|_| true))
+    }
+
+    fn joined_plugin(port: u16) -> WebSocket<TcpStream> {
+        let mut socket = connect(port, TOKEN, "null").unwrap();
+        let session_token = read_json(&mut socket)["sessionToken"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        socket
+            .send(Message::text(
+                json!({ "v": 1, "type": "join", "role": "figma-plugin", "channel": "monocode-test", "sessionToken": session_token })
+                    .to_string(),
+            ))
+            .unwrap();
+        assert_eq!(read_json(&mut socket)["message"]["result"], true);
+        socket
     }
 
     #[test]
@@ -2091,6 +2116,41 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(requested.join().unwrap().unwrap()["selectionCount"], 0);
+        bridge.stop();
+        drop(socket);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_generation_no_window_can_take() {
+        let root = temp_root("undelivered");
+        let bridge = FigmaBridge::new(
+            root.to_path_buf(),
+            true,
+            TOKEN.into(),
+            Arc::new(|notice| !matches!(notice, Notice::Generation(_))),
+        );
+        let port = bridge.start(0).unwrap();
+        let mut socket = joined_plugin(port);
+        socket
+            .send(Message::text(
+                json!({
+                    "v": 1, "id": "g1", "type": "message", "channel": "monocode-test",
+                    "message": { "id": "g1", "command": "generate_code_from_selection", "params": { "bundle": bundle() } },
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        assert_eq!(
+            read_json(&mut socket)["message"]["error"],
+            "Open a MonoCode window, then generate the component again."
+        );
+        assert_eq!(
+            fs::read_dir(&root)
+                .map(|entries| entries.count())
+                .unwrap_or(0),
+            0
+        );
         bridge.stop();
         drop(socket);
         fs::remove_dir_all(root).unwrap();

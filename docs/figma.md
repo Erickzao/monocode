@@ -28,9 +28,14 @@ layers shows the count; generation needs exactly one layer.
 Select **Generate component** in the Figma tab, or **Generate in MonoCode** in the
 plugin window. The plugin captures the layer as Figma's REST JSON (layout, fills,
 strokes, effects, typography, component properties, inline SVG for vector layers),
-every image fill, and a PNG preview. Image fills over 8 MB in total are re-encoded
-in the plugin before they are sent. Layers nested more than 48 levels deep can't
-be captured; select a layer inside them instead.
+every image fill, and a PNG preview. Layers that contain image fills get no inline
+SVG, because Figma would embed every image in it again; their images arrive as
+files instead. Image fills over 8 MB in total are re-encoded in the plugin before
+they are sent. Layers nested more than 48 levels deep can't be captured; select a
+layer inside them instead.
+
+Generating from the plugin window needs an open MonoCode window. With every
+window closed, the plugin shows an error instead of starting a generation.
 
 MonoCode validates the capture and stages it under its local data directory in
 `figma/generations/<id>/`:

@@ -7,6 +7,7 @@ const ASSET_RELAY_BUDGET_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_REFS = 50;
 const MAX_NODES = 5000;
 const MAX_DEPTH = 48;
+const SVG_SKIPPED_FOR_IMAGES = "SVG export skipped because the layer has image fills";
 const SUPPORTED_ROOT_TYPES = ["FRAME", "GROUP", "COMPONENT", "COMPONENT_SET", "INSTANCE", "SECTION"];
 const GEOMETRY_TYPES = ["VECTOR", "REGULAR_POLYGON", "POLYGON", "STAR", "LINE", "BOOLEAN_OPERATION", "ELLIPSE"];
 
@@ -191,7 +192,7 @@ function collectDiagnostics(document, rootType) {
     if (node.isMask) diagnostics.push(`mask: ${node.id}`);
     if (typeof node.rotation === "number" && Math.abs(node.rotation) > 0.001) diagnostics.push(`rotation: ${node.id}`);
     if (node.effects && node.effects.some((effect) => effect && effect.visible !== false)) diagnostics.push(`effects: ${node.id}`);
-    if (node.svgError && !node.svg && GEOMETRY_TYPES.includes(node.type)) diagnostics.push(`SVG export failed for ${node.id}: ${node.svgError}`);
+    if (node.svgError && !node.svg && GEOMETRY_TYPES.includes(node.type)) diagnostics.push(`SVG unavailable for ${node.id}: ${node.svgError}`);
     for (const child of node.children || []) walk(child);
   };
   walk(document);
@@ -291,6 +292,10 @@ function hexColor(color) {
 
 async function enrichRootSvg(documentNode, sourceNode) {
   if (documentNode.type !== "COMPONENT" && documentNode.type !== "INSTANCE") return;
+  if (collectImageRefs(documentNode).size > 0) {
+    documentNode.svgError = SVG_SKIPPED_FOR_IMAGES;
+    return;
+  }
   try {
     documentNode.svg = await sourceNode.exportAsync({ format: "SVG_STRING" });
   } catch (error) {
@@ -300,10 +305,14 @@ async function enrichRootSvg(documentNode, sourceNode) {
 
 async function enrichGeometryExports(documentNode, sourceNode) {
   if (GEOMETRY_TYPES.includes(documentNode.type) && sourceNode && typeof sourceNode.exportAsync === "function") {
-    try {
-      documentNode.svg = await sourceNode.exportAsync({ format: "SVG_STRING" });
-    } catch (error) {
-      documentNode.svgError = errorMessage(error);
+    if (collectImageRefs(documentNode).size > 0) {
+      documentNode.svgError = SVG_SKIPPED_FOR_IMAGES;
+    } else {
+      try {
+        documentNode.svg = await sourceNode.exportAsync({ format: "SVG_STRING" });
+      } catch (error) {
+        documentNode.svgError = errorMessage(error);
+      }
     }
   }
   if (!documentNode.children || !sourceNode || !("children" in sourceNode)) return;
