@@ -137,8 +137,9 @@ export function prepareFigmaPreview(
 
 export function captureFigmaGeneration(
   connectionId: string,
+  nodeId?: string,
 ): Promise<FigmaGeneration> {
-  return invoke<FigmaGeneration>("figma_generate", { connectionId });
+  return invoke<FigmaGeneration>("figma_generate", { connectionId, nodeId });
 }
 
 export function subscribeFigmaBridge(

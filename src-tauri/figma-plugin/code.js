@@ -38,20 +38,26 @@ async function handleCommand(command, params) {
     case "export_selection_preview":
       return exportSelectionPreview(params);
     case "get_codegen_bundle":
-      return codegenBundle();
+      return codegenBundle(params);
     default:
       throw new Error(`Unsupported command: ${command}`);
   }
 }
 
-function documentInfo() {
+function documentInfo(page = figma.currentPage) {
   return {
     id: figma.root.id,
     name: figma.root.name,
     fileKey: typeof figma.fileKey === "string" ? figma.fileKey : null,
-    pageId: figma.currentPage.id,
-    pageName: figma.currentPage.name,
+    pageId: page.id,
+    pageName: page.name,
   };
+}
+
+function pageOf(node) {
+  let current = node.parent;
+  while (current && current.type !== "PAGE") current = current.parent;
+  return current || figma.currentPage;
 }
 
 function nodeSize(node) {
@@ -88,12 +94,24 @@ async function exportSelectionPreview(params) {
   return { nodeId: node.id, mimeType: "image/png", bytes: bytes.byteLength, imageData: figma.base64Encode(bytes) };
 }
 
-async function codegenBundle() {
+async function codegenTarget(params) {
+  const nodeId = params && typeof params.nodeId === "string" ? params.nodeId : "";
+  if (nodeId) {
+    const node = await figma.getNodeByIdAsync(nodeId);
+    if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+      throw new Error(`No layer ${nodeId} in this Figma file`);
+    }
+    return node;
+  }
   const selection = figma.currentPage.selection;
   if (selection.length !== 1) {
     throw new Error(`Select exactly one layer to generate a component (selected: ${selection.length})`);
   }
-  const sourceNode = selection[0];
+  return selection[0];
+}
+
+async function codegenBundle(params) {
+  const sourceNode = await codegenTarget(params);
   if (!("exportAsync" in sourceNode)) throw new Error(`The selected layer cannot be exported: ${sourceNode.name}`);
   const response = await sourceNode.exportAsync({ format: "JSON_REST_V1" });
   await enrichRootSvg(response.document, sourceNode);
@@ -124,7 +142,7 @@ async function codegenBundle() {
     schemaVersion: 1,
     captureId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     capturedAt: Date.now(),
-    document: documentInfo(),
+    document: documentInfo(pageOf(sourceNode)),
     source: {
       nodeId: sourceNode.id,
       name: sourceNode.name,

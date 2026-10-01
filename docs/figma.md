@@ -87,6 +87,25 @@ Generations started from the plugin window use the same choice. Agents that
 cannot take attachments, such as fx, get the preview's file path in the prompt
 instead of an attached image.
 
+## Agents
+
+An agent in a thread where you used `/operator` can look at Figma without
+generating anything, for example to check a component it already built against
+the design:
+
+- `figma.selection` lists the files open with the plugin, each with its page and
+  selected layer.
+- `figma.capture` exports one layer into `.monocode/figma/<id>/design/` in the
+  session's working folder: the layer tree, its image fills, and a preview.
+  Without `nodeId` it exports the layer selected in Figma. `nodeId` takes a
+  layer ID such as `12:34`, or the `node-id=12-34` value from a Figma link; that
+  layer can be on another page of the same file. `connectionId` is only needed
+  when several files are open.
+
+Both actions only read from Figma, and the export follows the same rules as a
+generated preview. Run `monocode app --help` in that thread for the exact
+fields.
+
 ## Security
 
 - The bridge listens on `127.0.0.1` only. Every connection must present the

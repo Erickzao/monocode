@@ -970,19 +970,30 @@ pub async fn figma_prepare_preview(
 pub async fn figma_generate(
     bridge: State<'_, FigmaBridge>,
     connection_id: String,
+    node_id: Option<String>,
 ) -> Result<FigmaGeneration, String> {
     let bridge = bridge.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let bundle = bridge.request(
             &connection_id,
             "get_codegen_bundle",
-            json!({}),
+            capture_params(node_id.as_deref())?,
             BUNDLE_TIMEOUT,
         )?;
         stage_generation(&bridge.shared.generations, &bundle)
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn capture_params(node_id: Option<&str>) -> Result<Value, String> {
+    let Some(node_id) = node_id.map(str::trim) else {
+        return Ok(json!({}));
+    };
+    if !safe_id(node_id) {
+        return Err("The Figma layer id is invalid".into());
+    }
+    Ok(json!({ "nodeId": node_id }))
 }
 
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1967,6 +1978,21 @@ mod tests {
         assert!(names.contains(&"unrelated".to_string()));
         assert!(!names.contains(&format!("{:013}-{:08x}", 0, 0)));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn captures_the_selection_or_one_layer_by_id() {
+        assert_eq!(capture_params(None).unwrap(), json!({}));
+        assert_eq!(
+            capture_params(Some(" 12:34 ")).unwrap(),
+            json!({ "nodeId": "12:34" })
+        );
+        assert_eq!(
+            capture_params(Some("I12:34;56:78")).unwrap(),
+            json!({ "nodeId": "I12:34;56:78" })
+        );
+        assert!(capture_params(Some("")).is_err());
+        assert!(capture_params(Some("../12:34")).is_err());
     }
 
     #[test]

@@ -258,8 +258,8 @@
         };
       }
 
-      async function captureBundle() {
-        return optimizeBundle(await executeLocal("get_codegen_bundle", {}, 120000));
+      async function captureBundle(params) {
+        return optimizeBundle(await executeLocal("get_codegen_bundle", params || {}, 120000));
       }
 
       async function generate() {
@@ -285,7 +285,7 @@
           return;
         }
         try {
-          const result = command === "get_codegen_bundle" ? await captureBundle() : await executeLocal(command, params || {}, 30000);
+          const result = command === "get_codegen_bundle" ? await captureBundle(params) : await executeLocal(command, params || {}, 30000);
           sendResponse(id, result);
         } catch (error) {
           sendResponse(id, null, error instanceof Error ? error.message : String(error));
