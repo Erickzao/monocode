@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
+import { FigmaSettings } from "../../figma/ui/FigmaSettings";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownCircle,
@@ -53,6 +54,7 @@ import {
   applyChatBackgroundEmptyOpacity,
   applyChatBackgroundSessionOpacity,
   applyChatBackgroundScope,
+  applyDiffPalette,
   applyAccentColor,
   applyBodyGlass,
   applySidebarBlur,
@@ -75,6 +77,7 @@ import {
   loadChatBackgroundPath,
   loadChatBackgroundSessionOpacity,
   loadChatBackgroundScope,
+  loadDiffPalette,
   loadNewThreadBackgroundEffect,
   loadThemeDarkLightness,
   loadThemePreference,
@@ -90,6 +93,7 @@ import {
   saveChatBackgroundPath,
   saveChatBackgroundSessionOpacity,
   saveChatBackgroundScope,
+  saveDiffPalette,
   setNewThreadBackgroundEffect,
   saveThemeDarkLightness,
   saveThemePreference,
@@ -122,6 +126,8 @@ import {
   THEME_SATURATION_MIN,
   type ThemePreference,
   type ChatBackgroundScope,
+  DIFF_PALETTE_DEFAULT,
+  type DiffPalette,
   NEW_THREAD_BACKGROUND_EFFECTS,
   NEW_THREAD_BACKGROUND_EFFECT_LABELS,
   NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS,
@@ -226,6 +232,12 @@ import {
   useProviderAccountIdentities,
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
+import {
+  saveMaskEmails,
+  saveShowRemainingUsage,
+  useMaskEmails,
+  useShowRemainingUsage,
+} from "../model/displayPrefs";
 import {
   accountStatus,
   accountUsageKey,
@@ -541,7 +553,18 @@ export function SettingsView({
               {section === "general" ? (
                 <GeneralPage onOpenWhatsNew={onOpenWhatsNew} />
               ) : null}
-              {section === "connections" ? <ConnectionsSettings /> : null}
+              {section === "connections" ? (
+                <>
+                  <ConnectionsSettings />
+                  <Group
+                    id="figma"
+                    title="Figma"
+                    description="Pair the MonoCode plugin in Figma Desktop to inspect the live selection and generate components from it."
+                  >
+                    <FigmaSettings />
+                  </Group>
+                </>
+              ) : null}
               {section === "appearance" ? (
                 <AppearancePage appearance={appearance} />
               ) : null}
@@ -1817,6 +1840,7 @@ function useAppearanceSettings(
     useState(loadChatBackgroundSessionOpacity);
   const [chatBackgroundScope, setChatBackgroundScope] =
     useState<ChatBackgroundScope>(loadChatBackgroundScope);
+  const [diffPalette, setDiffPalette] = useState<DiffPalette>(loadDiffPalette);
   const [newThreadBackgroundEffect, setBackgroundEffect] =
     useState<NewThreadBackgroundEffect>(loadNewThreadBackgroundEffect);
   const [chatBackgroundBusy, setChatBackgroundBusy] = useState(false);
@@ -1934,6 +1958,12 @@ function useAppearanceSettings(
     setChatBackgroundScope(next);
   }, []);
 
+  const onDiffPalette = useCallback((next: DiffPalette) => {
+    applyDiffPalette(next);
+    saveDiffPalette(next);
+    setDiffPalette(next);
+  }, []);
+
   const onNewThreadBackgroundEffect = useCallback(
     (next: NewThreadBackgroundEffect) => {
       setNewThreadBackgroundEffect(next);
@@ -1973,6 +2003,7 @@ function useAppearanceSettings(
       Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100),
     );
     onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
+    onDiffPalette(DIFF_PALETTE_DEFAULT);
     onNewThreadBackgroundEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
     if (chatBackgroundPath) void onClearChatBackground();
     onUiScale(Math.round(UI_SCALE_DEFAULT * 100));
@@ -1984,6 +2015,7 @@ function useAppearanceSettings(
     onChatBackgroundEmptyOpacity,
     onChatBackgroundSessionOpacity,
     onChatBackgroundScope,
+    onDiffPalette,
     onNewThreadBackgroundEffect,
     onClearChatBackground,
     onAccentColor,
@@ -2010,6 +2042,7 @@ function useAppearanceSettings(
     chatBackgroundEmptyOpacity,
     chatBackgroundSessionOpacity,
     chatBackgroundScope,
+    diffPalette,
     newThreadBackgroundEffect,
     chatBackgroundBusy,
     chatBackgroundError,
@@ -2028,6 +2061,7 @@ function useAppearanceSettings(
     onChatBackgroundEmptyOpacity,
     onChatBackgroundSessionOpacity,
     onChatBackgroundScope,
+    onDiffPalette,
     onNewThreadBackgroundEffect,
     onUiScale,
     onCollapsedProjectRailMode,
@@ -2069,6 +2103,22 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
           <AccentColorPicker
             value={appearance.accentColor}
             onChange={appearance.onAccentColor}
+          />
+        </Row>
+        <Row
+          id="diff-colors"
+          label="Diff colors"
+          description="Colors for added and removed lines. Colorblind and High contrast use blue and orange instead of green and red; High contrast adds stronger tints and text."
+        >
+          <Segmented
+            label="Diff colors"
+            value={appearance.diffPalette}
+            options={[
+              { value: "default", label: "Default" },
+              { value: "colorblind", label: "Colorblind" },
+              { value: "high-contrast", label: "High contrast" },
+            ]}
+            onChange={appearance.onDiffPalette}
           />
         </Row>
       </Group>
@@ -3171,6 +3221,8 @@ function ProvidersPage({
     <>
       <ProviderAccountsSettings />
 
+      <UsageDisplaySettings />
+
       <Group
         id="agent-clis"
         title="Agent CLIs"
@@ -3243,6 +3295,37 @@ function ProvidersPage({
         </Row>
       </Group>
     </>
+  );
+}
+
+function UsageDisplaySettings() {
+  const showRemainingUsage = useShowRemainingUsage();
+  const maskEmails = useMaskEmails();
+  return (
+    <Group title="Usage and privacy">
+      <Row
+        id="show-remaining-usage"
+        label="Show remaining usage"
+        description="Fill usage meters with what is left in each limit instead of what has been used."
+      >
+        <Toggle
+          label="Show remaining usage"
+          on={showRemainingUsage}
+          onChange={saveShowRemainingUsage}
+        />
+      </Row>
+      <Row
+        id="mask-emails"
+        label="Mask account emails"
+        description="Blur account emails in Settings and the usage popover until you click one, so they stay out of screenshots."
+      >
+        <Toggle
+          label="Mask account emails"
+          on={maskEmails}
+          onChange={saveMaskEmails}
+        />
+      </Row>
+    </Group>
   );
 }
 

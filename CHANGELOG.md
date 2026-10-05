@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-05
+
+### Added
+
+- The sidebar working-copy switcher can search by branch or path and select a checkout with the arrow keys and Enter. Entering a name with no matches offers to create a worktree from the selected checkout's `HEAD`, then switches to it, with progress and errors shown in the picker.
+- Folder rows in the Changes panel's tree view can stage or unstage all changes beneath that folder, including in remote projects. File and folder mutation actions are disabled while another change is in progress, and affected diffs refresh when it completes.
+- The question panel has a **Back** button to revisit and edit earlier answers before submitting, preserving selected options and free-text responses. In #688.
+- GitHub pull request and issue views in the Inbox have an activity timeline that interleaves comments, reviews, and commits chronologically, groups consecutive commits by author, and lets long comments expand on demand. Linked work item panels add expandable description summaries; pull request panels also list changed files with counts and links to each file's diff.
+- Settings → Appearance → **Diff colors** offers Default, Colorblind (blue/orange) and High contrast (blue/orange with stronger tints and text) palettes. They apply to the diff view, the editor's git gutter, tool-call previews, change counts and added/deleted file status in the file tree and changes panel. In #707 by @EricRasputin.
+- The README includes a contributors badge, a link to the full contributor list, and acknowledgments for contrib.rocks.
+
+### Changed
+
+- Workspace search and new-session actions live in the sidebar header in both expanded and compact layouts.
+- Quick Composer has a dedicated permissions picker beside the model selector, and its project picker is in the composer header.
+- Long title-bar and file-pane tab labels fade at their clipped edge. The fade appears only when text overflows and updates as tabs resize.
+- The session sidebar and transcripts above a docked composer fade at the bottom edge, with extra scroll space so the last session and latest reply can scroll fully into view.
+- Newly created sidebar sessions fade in and push existing rows down; session title updates have a sweep and particle effect. Opening a project or reordering existing sessions does not replay the insertion animation. Both effects respect reduced-motion preferences.
+- New split panes slide in from the edge where they were added, while linked work item panels slide in from the right and reveal their content together. These animations respect reduced-motion preferences.
+- Linked GitHub work items preload when hovering their sidebar links. GitHub Inbox details, discussions, and diffs reuse recent cached results and share in-flight requests, reducing repeat API calls and delays when opening a panel.
+- New agent output reveals at a steady pace from its first chunk, including replies that finish before their first paint. Incoming chunks no longer restart the reveal timing; saved replies and output received in a hidden tab appear immediately when opened.
+- Added and removed lines show a `+`/`-` marker in the diff view and in the editor's git gutter, so they no longer depend on red/green color alone. Diff colors are now theme tokens with separate light-theme values, which also improves the contrast of light-theme gutter line numbers. In #707 by @EricRasputin.
+- Regression coverage now includes worktree search and creation, folder staging, file-drop lifecycle handling, transcript scrolling and output pacing, Inbox timelines and cache freshness, and pane animations. Folder-action tests isolate delayed refreshes to avoid timer races.
+
+### Fixed
+
+- Transcript scrolling keeps the reader's place when earlier turns resize together or composer resizing temporarily changes the viewport. Layout changes and queued scroll events no longer resume paused following, and scrolling inside a code block no longer interrupts transcript following.
+- File and image drops work after the composer becomes ready or switches providers, with correct drop coordinates on Windows and Retina Macs. Sending waits for dropped attachments to finish reading; stale reads after a draft reset or unmount are discarded. Duplicate native/browser drop events attach a file once, browser image items are accepted even without a populated file list, and unreadable or missing files show an error.
+- Staging and unstaging treat file and folder paths literally, so names containing wildcard characters or Git pathspec syntax cannot affect unrelated paths, locally or on a remote host.
+- Markdown and SVG files opened for Git review default to source mode so their changes are visible in the editor. Review tabs remember their view mode separately from ordinary file tabs. In #660.
+- The model search receives focus after its flyout becomes visible, including both the Models submenu and the picker opened beside the current model. In #670 by @SachinD6.
+- The composer model picker keeps long model names on one line instead of truncating them.
+- Explorer file names no longer clip the bottoms of letters such as `g`. In #678 by @sambhavthakkar.
+- Sidebar diff statistics scale to the available width and refit when the sidebar is resized.
+- The provider usage chip, its tooltip, and usage cards update immediately when **Show remaining usage** changes. Remaining percentages are calculated from clamped usage values.
+- Session history shows live title and linked-work-item updates before the next save. Pending agent events are applied before submitting or steering a message, keeping received output before the new user message and checking the latest session state.
+- Pi's model catalog includes models registered by extensions. In #645 by @AdzeB.
+- Remote hosts detect the Pi coding agent installed via npm by resolving its launcher and checking the enclosing package manifest. In #687; fixes #673.
+- Merge request diffs load on older self-hosted GitLab instances by falling back to the legacy changes endpoint when the newer endpoint is unavailable. Permission and connection errors still surface normally, and incomplete diffs are marked as truncated. In #723.
+
+## [0.7.0] - 2026-10-02
+
+### Added
+
+- The sidebar working-copy switcher gives local worktrees their own workspaces, with open-tab counts and activity indicators. Selecting a worktree filters its sessions and tabs; the project-folder session list still shows all project conversations. New sessions start in the selected checkout, and switching workspaces restores a remembered tab, carries over a blank session, or opens a new one.
+- Settings → Providers → Usage and privacy adds **Show remaining usage** and **Mask account emails**. Both preferences stay in sync across windows; enabling masking again hides previously revealed emails. In #592 by @itizarsa.
+
+### Changed
+
+- Usage meters show used capacity and account emails are visible by default, including after upgrading from 0.6.0. Enable **Show remaining usage** and **Mask account emails** to restore the previous display behavior. In #592 by @itizarsa.
+- Tabs belong to the workspace where they were opened. Opening an existing conversation from the session list, search, or inbox brings its tab into the selected workspace while preserving its checkout; changing a session's working copy from the composer keeps the tab in its current workspace.
+- Local projects reopen in their default workspace after an app restart. Only tabs assigned to that workspace are restored; tabs in other worktree workspaces close, while saved conversations remain available in history.
+- Inbox, Notes, and Automations preload after the workspace appears. Navigation keeps the current view visible until the destination is ready, and cached notes and automation lists appear immediately while refreshing.
+- Markdown code highlighting uses a bounded cache and shares concurrent highlighting requests, avoiding the accumulation of every partial code block during streaming. Exact cache keys also prevent different blocks from receiving each other's highlighting. In #636 by @pdparchitect.
+- The Inbox image and video cache has a 32 MiB budget, evicts the least recently used media, and shares downloads already in progress instead of retaining every file for the life of the window. In #638 by @pdparchitect.
+- Codex Max and Ultra effort options have animated tile and glow effects in the model picker and effort menu, with keyboard highlighting and reduced-motion support. Glow edges have been softened. In #516 by @shxntanu.
+- Transcript turn metrics have more spacing beside the other response controls.
+- Session detachment and finished-session tracking now use dedicated hooks, with expanded regression coverage for lifecycle cleanup, cache eviction, concurrent highlighting, terminal remounts, navigation, and UI restoration.
+
+### Fixed
+
+- Rapid worktree selections apply the latest choice and ignore stale completions, keeping the selected workspace aligned with the blank session's execution directory. The switcher shows progress and failures, and the composer is temporarily disabled while a switch is pending.
+- Opening a specific session from search or the inbox after a project switch no longer redirects to an unrelated remembered worktree tab. Project returns keep their existing conversation fallback, including tabs with panes from different projects.
+- Finished orchestration workers and internal inbox discussions no longer remain marked as unseen live agents, allowing eligible finished workers to detach and release their transcripts. In #639 by @pdparchitect.
+- App windows no longer buffer harness output for processes owned by other windows or for stopped process generations, preventing unused output from accumulating or being replayed into a replacement process. In #637 by @pdparchitect.
+- OpenCode closes event-stream handlers when stopping a session even if the stream or server already ended, releasing the retained session state. In #640 by @pdparchitect.
+- A terminal no longer opens blank when its view remounts with the same ID, such as under React StrictMode in development or after moving a terminal between the dock and a file pane. The previous view's late cleanup used to kill the new shell and drop its output listener. In #641 by @king20300.
+- **Open All Changes** respects the section it was opened from: Changes shows unstaged diffs, Staged Changes shows staged diffs, and the staged review is labeled accordingly. In #582 by @itizarsa.
+- Large files with scattered edits use a line-by-line diff instead of appearing entirely changed when the character diff gives up. Hunk staging uses the same diff calculation as the review. In #590 by @itizarsa.
+- Markdown previews, notes, and skill documents preserve line breaks, including around inline formatting, blockquotes, and explicit breaks. Agent replies and inbox comments continue to reflow as prose. In #595 by @sambhavthakkar.
+- Codex command rows show their commands instead of a bare Shell label when a file-listing action has no path. Older rows are repaired from their saved command previews, and a failed repair save no longer prevents opening the conversation. In #581 by @sambhavthakkar.
+- User-message bubbles fit within narrow session panes and recalculate their shape when a pooled transcript is shown again. In #575 by @sambhavthakkar.
+- Closing Settings or navigating back restores the previously open workspace view.
+- **Reveal in File Explorer** selects the correct file on Windows when its path contains spaces. In #619 by @SamuelPoiani.
+- ARM64 Linux builds use the platform's correct character type for the terminal name buffer, fixing a compilation failure. In #584 by @pdparchitect.
+
 ## [0.6.0] - 2026-09-30
 
 ### Added
@@ -1175,7 +1251,9 @@ First public release. macOS (Apple Silicon) only.
 - Updater endpoint and minisign public key are injected at release time rather than committed, so forks do not inherit the maintainer's update channel.
 - macOS release builds sign with `APPLE_SIGNING_IDENTITY` via a config overlay; the committed default remains ad-hoc `-` for community builds.
 
-[Unreleased]: https://github.com/hardbeat920/monocode/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/hardbeat920/monocode/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/hardbeat920/monocode/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/hardbeat920/monocode/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/hardbeat920/monocode/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hardbeat920/monocode/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/hardbeat920/monocode/compare/v0.4.2...v0.4.3
