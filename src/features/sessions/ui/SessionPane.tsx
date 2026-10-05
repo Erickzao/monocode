@@ -97,6 +97,7 @@ import type { HostSession } from "../../connections/model/protocol";
 
 export type SessionPaneProps = {
   session: Session;
+  workspaceSwitchingSessionId?: string;
   reviewUndoLocked?: boolean;
   visible: boolean;
   focused: boolean;
@@ -251,6 +252,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteSessionStarted = false,
   allowedModelHarnesses,
   session,
+  workspaceSwitchingSessionId,
   reviewUndoLocked = false,
   visible,
   focused,
@@ -546,6 +548,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composer = (
     <Composer
       key={session.id}
+      disabled={workspaceSwitchingSessionId === session.id}
       remoteSession={remoteSession}
       remoteFeatures={remoteFeatures}
       allowedModelHarnesses={allowedModelHarnesses}
@@ -757,7 +760,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           ref={transcriptScope}
-          className="@container relative min-h-0 flex-1"
+          className={`@container relative min-h-0 flex-1${
+            dockComposer ? " transcript-composer-fade" : ""
+          }`}
         >
           {visible && focused && !session.inboxAsk ? (
             <LinkedWorkItemUpdateNotice
