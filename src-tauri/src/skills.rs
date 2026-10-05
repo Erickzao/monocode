@@ -662,8 +662,8 @@ mod tests {
     fn lists_large_catalogs_from_every_root() {
         let project = tmp("proj");
         let home = tmp("home");
-        for index in 0..400 {
-            let name = format!("shared-{index:03}");
+        for index in 0..1_400 {
+            let name = format!("shared-{index:04}");
             write_skill(
                 &home.0.join(".agents/skills"),
                 &name,
@@ -677,8 +677,8 @@ mod tests {
         );
 
         let skills = list_skills_from(&project.0, Some(&home.0), None);
-        assert_eq!(skills.len(), 401);
-        assert!(skills.iter().any(|s| s.name == "shared-399"));
+        assert_eq!(skills.len(), 1_401);
+        assert!(skills.iter().any(|s| s.name == "shared-1399"));
         let codex = skills.iter().find(|s| s.name == "codex-only").unwrap();
         assert_eq!(codex.source, "codex");
     }
