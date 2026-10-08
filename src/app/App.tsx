@@ -629,6 +629,12 @@ import {
   type AutomationRun,
 } from "../features/automations/model/automations";
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
+import { useFigmaLaunches } from "../features/figma/hooks/useFigmaLaunches";
+import {
+  captureFigmaGeneration,
+  loadFigmaBridgeStatus,
+  prepareFigmaPreview,
+} from "../features/figma/model/figma";
 import type { QuickLaunch } from "../features/quick-composer/model/quickComposer";
 import { claimInboxAutomationRuns } from "../features/automations/model/automationEvents";
 import {
@@ -705,6 +711,7 @@ import {
   loadAutosave,
   loadCollapsedProjectRailMode,
   loadFileTabMode,
+  loadFigmaPanelEnabled,
   loadLiveAgentsEnabled,
   loadNotesEnabled,
   loadMonosEnabled,
@@ -717,6 +724,7 @@ import {
   matchCustomKeybinding,
   saveSettingsSection,
   saveAutosave,
+  subscribeFigmaPanelEnabled,
   subscribeLiveAgentsEnabled,
   subscribeNotesEnabled,
   type CollapsedProjectRailMode,
@@ -1247,6 +1255,11 @@ function Workspace({
     subscribeLiveAgentsEnabled,
     loadLiveAgentsEnabled,
     () => true,
+  );
+  const figmaPanelEnabled = useSyncExternalStore(
+    subscribeFigmaPanelEnabled,
+    loadFigmaPanelEnabled,
+    loadFigmaPanelEnabled,
   );
   const [collapsedProjectRailMode, setCollapsedProjectRailMode] =
     useState<CollapsedProjectRailMode>(loadCollapsedProjectRailMode);
@@ -7886,7 +7899,7 @@ function Workspace({
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
-              `<monocode_app>\n${handAgent ? "App access is always enabled in this thread." : "The user's Operator command enables app access in this thread, including later turns without the command."} You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read, continue, stop, archive or delete other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` when you need the exact commands and JSON fields. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`,
+              `<monocode_app>\n${handAgent ? "App access is always enabled in this thread." : "The user's Operator command enables app access in this thread, including later turns without the command."} You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read, continue, stop, archive or delete other project sessions, save unsent drafts, organize session folders, read or write saved notes, and read the live Figma selection or export a Figma layer as read-only design files through its local CLI. Run \`${cli} --help\` when you need the exact commands and JSON fields. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`,
             );
           }
           // A Mono reads who it is ahead of the message, so it never takes it
@@ -8503,6 +8516,21 @@ function Workspace({
     [appendTab, submitSession, onSaveDraft],
   );
   useQuickComposerLaunches(launchQuickSession);
+  useFigmaLaunches(
+    {
+      launch: launchQuickSession,
+      submit: (sessionId, text, attachments) =>
+        submitSession(sessionId, text, attachments, {
+          followUpBehavior: "queue",
+        }),
+      changeModel: onModelChange,
+      changeModelSettings: onModelSettingsChange,
+      currentProject: () => projectCwdRef.current,
+      session: (id) =>
+        sessionsRef.current.find((session) => session.id === id) ?? null,
+    },
+    inboxViewOpen ? null : (active ?? null),
+  );
   const launchQuickSessionRef = useRef(launchQuickSession);
   launchQuickSessionRef.current = launchQuickSession;
   const submitSessionRef = useRef(submitSession);
@@ -10897,6 +10925,17 @@ function Workspace({
             readAgentFile: (monoId, path) => readAgentFile(monoId, path),
             writeAgentFile: (monoId, path, text, hash) =>
               writeAgentFile(monoId, path, text, hash),
+            figmaStatus: () => loadFigmaBridgeStatus(),
+            figmaCapture: async (connectionId, nodeId, cwd) => {
+              const generation = await captureFigmaGeneration(
+                connectionId,
+                nodeId,
+              );
+              return {
+                generation,
+                preview: await prepareFigmaPreview(generation.id, cwd),
+              };
+            },
           },
         );
         appReceipts.current.set(key, { signature, promise });
@@ -11619,8 +11658,12 @@ function Workspace({
   }, [onVisitForward]);
 
   useEffect(() => {
-    if (sidebarTab === "inbox") setSidebarTab("sessions");
-  }, [sidebarTab]);
+    if (
+      sidebarTab === "inbox" ||
+      (sidebarTab === "figma" && !figmaPanelEnabled)
+    )
+      setSidebarTab("sessions");
+  }, [sidebarTab, figmaPanelEnabled]);
 
   useEffect(() => {
     if (!dockVisible) setProjectTerminalFocused(false);

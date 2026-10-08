@@ -24,6 +24,8 @@ const ACTION_LABELS: Record<string, string> = {
   "artifacts.list": "List artifacts",
   "artifacts.read": "Read an artifact",
   "artifacts.write": "Write an artifact",
+  "figma.selection": "Read the Figma selection",
+  "figma.capture": "Export a Figma layer",
 };
 
 /** Conservatively parse one shell invocation; compound commands use the shell row. */
