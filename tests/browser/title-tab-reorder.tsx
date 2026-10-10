@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { TitleBar, type Tab } from "../../src/app/shell/TitleBar";
 import "../../src/styles/index.css";
+
+// Keep the real title bar and window controls, replacing only native IPC.
+mockWindows("main");
+mockIPC(
+  (command) => {
+    if (command === "plugin:window|is_maximized") return false;
+    if (command === "plugin:window|set_title") return;
+    throw new Error(`Unexpected command: ${command}`);
+  },
+  { shouldMockEvents: true },
+);
 
 const tab = (id: string): Tab => ({
   id,
