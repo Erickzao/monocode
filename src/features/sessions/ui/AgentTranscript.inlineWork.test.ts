@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Block } from "../model/session";
 import { AgentTranscript, MonoActivityTrail } from "./AgentTranscript";
-import { WORD_FADE_MS } from "./wordFade";
+import { PACED_REVEAL_KEY, WORD_FADE_MS } from "./wordFade";
 
 vi.mock("../../../platform/tauri/clipboard", () => ({
   copyMessage: vi.fn().mockResolvedValue(undefined),
@@ -55,6 +55,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  localStorage.removeItem(PACED_REVEAL_KEY);
   act(() => root.unmount());
   container.remove();
   resultStyles.remove();
@@ -191,6 +192,7 @@ it("shows sessions beside the footer actions only for the turn that launched the
 });
 
 it("waits for the final reply's reveal, then shows its artifact before the actions", () => {
+  localStorage.setItem(PACED_REVEAL_KEY, "1");
   const user: Block = {
     id: "user",
     role: "user",
@@ -771,3 +773,33 @@ it.each(["Follow up", "👍"])(
     expect(container.textContent).not.toContain("Steer");
   },
 );
+
+it("does not repeat a thought's first paragraph above it once opened", () => {
+  act(() =>
+    root.render(
+      createElement(MonoActivityTrail, {
+        blocks: [
+          tool("before"),
+          {
+            id: "thought",
+            role: "reasoning",
+            text: "Check the config first.\n\nThen run the tests.",
+          },
+          tool("after"),
+        ],
+      }),
+    ),
+  );
+  const row = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Show thinking: Check the config first."]',
+  )!;
+
+  act(() => row.click());
+
+  expect(row.getAttribute("aria-label")).toBe("Hide thinking");
+  expect(row.textContent).toBe("Thinking");
+  expect(container.textContent?.split("Check the config first.")).toHaveLength(
+    2,
+  );
+  expect(container.textContent).toContain("Then run the tests.");
+});

@@ -1,0 +1,40 @@
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [hala/build]
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - run: npm ci
+
+      - name: Build app and dmg
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{ "bundle": { "createUpdaterArtifacts": false } }' > "$RUNNER_TEMP/tauri.local.conf.json"
+          npx tauri build --target aarch64-apple-darwin --bundles app,dmg --config "$RUNNER_TEMP/tauri.local.conf.json"
+          npx tauri build --target x86_64-apple-darwin --bundles app,dmg --config "$RUNNER_TEMP/tauri.local.conf.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonoCode-macos-dmg
+          path: |
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
